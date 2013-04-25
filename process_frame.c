@@ -74,6 +74,61 @@ void ProcessFrame(uint8 *pInputImg)
 												  *(p+nc-1) | *(p+nc) | *(p+nc+1);
 			}
 		}
+
+		//wrap image DILATION in picture struct
+		Pic1.data = data.u8TempImage[DILATION];
+		Pic1.width = nc;
+		Pic1.height = OSC_CAM_MAX_IMAGE_HEIGHT/2;
+		Pic1.type = OSC_PICTURE_GREYSCALE;
+		//as well as EROSION (will be used as output)
+		Pic2.data = data.u8TempImage[EROSION];
+		Pic2.width = nc;
+		Pic2.height = OSC_cam_max_image_height/2;
+		Pic2.type = OSC_PICTURE_BINARY; //probably has no consequences
+		//have to convert to OSC_PICTURE_BINARY which has values 0x01 (and not 0xff)
+		OscVisGrey2BW(&Pic1, &Pic2, 0x80, false);
+
+		//now do region labeling and feature extraction
+		OscSixLabelbinary(&Pic2, &ImgRegions);
+		OscVisGetRegionProperties(&ImgRegions);
+
+		//OscLog(INFO, "number of objects %d\n", ImgRegions.noOfObjects);
+		//ploit bounding boxes both in grey and dilation image
+		Pic2.data = data.u8TempImage[GRAYSCALE];
+		OscVisDrawBoundingBoxBW( &Pic2, &ImgRegions, 255);
+		OscVisDrawBoundingBoxBW( &Pic1, &ImgRegions, 128);
+
 	}
 }
 
+
+/* Drawing Function for Bounding Boxes. in Gray value Color */
+OSC_ERR OscVisDrawBoundingBoxBW(struct OSC_PICTURE *picIn, struct OSC_VIS_REGIONS *regions)
+{
+        uint16 i, o;
+        uint8 *pImg = (uint8*)picIn->data;
+        const uint16 width = picIn->width;
+        for(o = 0; o < regions->noOfObjects; o++)
+        {
+
+                /* Draw the horizontal lines. */
+                for (i = regions->objects[o].bboxLeft; i < regions->objects[o].bboxRight; i += 1)
+                {
+                        pImg[(width * regions->objects[o].bboxTop + i)]= Color;
+
+                        pImg[(width * (regions->objects[o].bboxBottom - 1) + i)] = Color;
+
+                }
+
+                /* Draw the vertical lines. */
+
+                for (i = regions->objects[o].bboxTop; i < regions->objects[o].bboxBottom-1; i += 1)
+               {
+                        pImg[(width * i + regions->objects[o].bboxLeft)] = Color;
+
+                        pImg[(width * i + regions->objects[o].bboxRight)] = Color;
+
+                }
+       }
+       return SUCCESS;
+}
