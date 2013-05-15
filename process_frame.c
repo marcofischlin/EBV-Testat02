@@ -16,7 +16,7 @@ OSC_ERR OscVisDrawBoundingBoxBW(struct OSC_PICTURE *picIn, struct OSC_VIS_REGION
 
 void ProcessFrame(uint8 *pInputImg)
 {
-	int c, r, i, K;
+	int c, r;
 	int nc = OSC_CAM_MAX_IMAGE_WIDTH/2;
 	int siz = sizeof(data.u8TempImage[GRAYSCALE]);
 
@@ -26,17 +26,6 @@ void ProcessFrame(uint8 *pInputImg)
 
 	struct OSC_PICTURE Pic1, Pic2;//we require these structures to use Oscar functions
 	struct OSC_VIS_REGIONS ImgRegions;//these contain the foreground objects
-
-	uint32 Hist[256];
-	uint8 * p = data.u8TempImage[GRAYSCALE];
-	memset(Hist, 0, sizeof(Hist));
-	int W0 = 0;
-	int W1 = 0;
-	int M0 = 0;
-	int M1 = 0;
-	int Kopt = 0;
-	int sigB[256];
-	memset(sigB, 0, sizeof(sigB));
 
 
 	if(data.ipc.state.nStepCounter == 1)
@@ -50,50 +39,7 @@ void ProcessFrame(uint8 *pInputImg)
 	else
 	{
 
-		if(data.ipc.state.nThreshold == 0)
-		{
-			for(i = 0; i < siz; i++)
-			{
-				Hist[p[i]] += 1;
-			}
-
-			for(K = 1; K < 256; K++)
-			{
-				W0 = 0;
-				W1 = 0;
-				M0 = 0;
-				M1 = 0;
-
-				for(r = 0; r < K; r++)
-				{
-					W0 += Hist[p[r]];
-					M0 += (Hist[p[r]]*r);
-				}
-
-				for(r = K + 1; r < 256; r++)
-				{
-					W1 += Hist[p[r]];
-					M1 += (Hist[p[r]]*r);
-				}
-				sigB[K] = W0 * W1 * (((M0 / W0) - (M1 / M0)) * ((M0 / W0) - (M1 / M0)));
-
-				if(sigB[K] > sigB[Kopt])
-				{
-					Kopt = K;
-				}
-			}
-			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
-			{
-				for(c = 0; c < nc; c++)
-				{
-					data.u8TempImage[THRESHOLD][r+c] = abs((short) data.u8TempImage[GRAYSCALE][r+c]) > Kopt ? 0 : 0xff;
-				}
-			}
-
-		}
-		else
-		{
-			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
+			for(r = 0; r < siz; r+= nc)		// manual Threshold
 			{
 				for(c = 0; c < nc; c++)
 				{
@@ -101,7 +47,6 @@ void ProcessFrame(uint8 *pInputImg)
 					data.u8TempImage[THRESHOLD][r+c] = abs((short) data.u8TempImage[GRAYSCALE][r+c]) > data.ipc.state.nThreshold ? 0 : 0xff;
 				}
 			}
-		}
 		/*
 		{
 			//for debugging purposes we log the background values to console out
