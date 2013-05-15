@@ -16,7 +16,7 @@ OSC_ERR OscVisDrawBoundingBoxBW(struct OSC_PICTURE *picIn, struct OSC_VIS_REGION
 
 void ProcessFrame(uint8 *pInputImg)
 {
-	int c, r, i, K;
+	int c, r, g, K;
 	int nc = OSC_CAM_MAX_IMAGE_WIDTH/2;
 	int siz = sizeof(data.u8TempImage[GRAYSCALE]);
 
@@ -35,8 +35,8 @@ void ProcessFrame(uint8 *pInputImg)
 	int M0 = 0;
 	int M1 = 0;
 	int Kopt = 0;
-	int sigB[256];
-	memset(sigB, 0, sizeof(sigB));
+	int sigB2[256];
+	memset(sigB2, 0, sizeof(sigB2));
 
 
 	if(data.ipc.state.nStepCounter == 1)
@@ -50,39 +50,42 @@ void ProcessFrame(uint8 *pInputImg)
 	else
 	{
 
-		if(data.ipc.state.nThreshold == 0)
+		if(data.ipc.state.nThreshold == 0)	// Threshold wird automatisch optimal berechnet
 		{
-			for(i = 0; i < siz; i++)
+			for(r = 0; r < siz; r+= nc)		// Erstellen des Histogramms
 			{
-				Hist[p[i]] += 1;
+				for(c = 0; c < nc; c++)
+				{
+					Hist[p[r + c]] += 1;
+				}
 			}
 
-			for(K = 1; K < 256; K++)
+			for(K = 0; K < 256; K++)		// Jeden Grauwert durchgehen
 			{
 				W0 = 0;
 				W1 = 0;
 				M0 = 0;
 				M1 = 0;
 
-				for(r = 0; r < K; r++)
+				for(g = 0; g < K; g++)
 				{
-					W0 += Hist[p[r]];
-					M0 += (Hist[p[r]]*r);
+					W0 += Hist[g];			// berechnen von W0
+					M0 += Hist[g] * g;		// berechnen von M0
 				}
 
-				for(r = K + 1; r < 256; r++)
+				for(g = K + 1; g < 256; g++)
 				{
-					W1 += Hist[p[r]];
-					M1 += (Hist[p[r]]*r);
+					W1 += Hist[g];			// berechnen von W1
+					M1 += Hist[g] * g;		// berechnen von M1
 				}
-				sigB[K] = W0 * W1 * (((M0 / W0) - (M1 / M0)) * ((M0 / W0) - (M1 / M0)));
+				sigB2[K] = W0 * W1 / 90240 * (uint32) pow(((double)M0 / (double)W0)-((double)M1 / (double)W1),2); // Sigma B im Quadrat berechnen
 
-				if(sigB[K] > sigB[Kopt])
+				if(sigB2[K] > sigB2[Kopt])
 				{
-					Kopt = K;
+					Kopt = K;				// Bestes K ermitteln
 				}
 			}
-			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
+			for(r = 0; r < siz; r+= nc)		// Bild mit dem optimalen Threshold Kopt
 			{
 				for(c = 0; c < nc; c++)
 				{
@@ -91,7 +94,7 @@ void ProcessFrame(uint8 *pInputImg)
 			}
 
 		}
-		else
+		else	// Threshold manuell eingestellt
 		{
 			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
 			{
