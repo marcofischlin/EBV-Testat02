@@ -16,16 +16,28 @@ OSC_ERR OscVisDrawBoundingBoxBW(struct OSC_PICTURE *picIn, struct OSC_VIS_REGION
 
 void ProcessFrame(uint8 *pInputImg)
 {
-	int c, r;
+	int c, r, i, K;
 	int nc = OSC_CAM_MAX_IMAGE_WIDTH/2;
 	int siz = sizeof(data.u8TempImage[GRAYSCALE]);
 
-	int Shift = 7;
-	short Beta = 2;//the meaning is that in floating point the value of Beta is = 6/(1 << Shift) = 6/128 = 0.0469
-	uint8 MaxForeground = 120;//the maximum foreground counter value (at 15 fps this corresponds to less than 10s)
+	//int Shift = 7;
+	//short Beta = 2;//the meaning is that in floating point the value of Beta is = 6/(1 << Shift) = 6/128 = 0.0469
+	//uint8 MaxForeground = 120;//the maximum foreground counter value (at 15 fps this corresponds to less than 10s)
 
 	struct OSC_PICTURE Pic1, Pic2;//we require these structures to use Oscar functions
 	struct OSC_VIS_REGIONS ImgRegions;//these contain the foreground objects
+
+	uint32 Hist[256];
+	uint8 * p = data.u8TempImage[GRAYSCALE];
+	memset(Hist, 0, sizeof(Hist));
+	int W0 = 0;
+	int W1 = 0;
+	int M0 = 0;
+	int M1 = 0;
+	int Kopt = 0;
+	int sigB[256];
+	memset(sigB, 0, sizeof(sigB));
+
 
 	if(data.ipc.state.nStepCounter == 1)
 	{
@@ -37,45 +49,59 @@ void ProcessFrame(uint8 *pInputImg)
 	}
 	else
 	{
-		/* this is the default case */
-		for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
+
+		if(data.ipc.state.nThreshold == 0)
 		{
-			for(c = 0; c < nc; c++)
+			for(i = 0; i < siz; i++)
 			{
-				/* first determine the foreground estimate */
-				data.u8TempImage[THRESHOLD][r+c] = abs((short) data.u8TempImage[GRAYSCALE][r+c]-(short) data.u8TempImage[BACKGROUND][r+c]) < data.ipc.state.nThreshold ? 0 : 0xff;
+				Hist[p[i]] += 1;
+			}
 
-				/* now depending on the foreground estimate ... */
-				if(data.u8TempImage[THRESHOLD][r+c]) {
-					/* ... either in case foreground is detected -> do not update the background but increase the foreground counter */
-					if(data.u8TempImage[FGRCOUNTER][r+c] < MaxForeground) {
-						data.u8TempImage[FGRCOUNTER][r+c]++;
-					} else {
-						/* if counter reaches max -> set current image to background */
-						data.u8TempImage[FGRCOUNTER][r+c] = 0;
-						data.u8TempImage[BACKGROUND][r+c] = data.u8TempImage[GRAYSCALE][r+c];
-					}
-				} else {/* ...or in case background is detected -> decrease foreground counter and update background as usual */					
-					if(0 < data.u8TempImage[FGRCOUNTER][r+c]) {
-						data.u8TempImage[FGRCOUNTER][r+c]--;
-					}
-					/* now update the background image; the value of background should be corrected by the following difference (* 1/128) */
-					short Diff = Beta*((short) data.u8TempImage[GRAYSCALE][r+c] - (short) data.u8TempImage[BACKGROUND][r+c]);
+			for(K = 1; K < 256; K++)
+			{
+				W0 = 0;
+				W1 = 0;
+				M0 = 0;
+				M1 = 0;
 
-					if(abs(Diff) >= 128) //we will have a correction - apply it (this also avoids the "bug" that -1 >> 1 = -1)
-						data.u8TempImage[BACKGROUND][r+c] = (uint8) ((short) data.u8TempImage[BACKGROUND][r+c] + (Diff >> Shift));//first cast to (short) because Diff can be negative then cast to uint8
-																																  //we do no explicit min(255, max(0, ** )) statement; this should not happen
-					else //due to the division by 128 the correction would be zero -> thus add/subtract at least unity
-					{
-						if(Diff > 0 && data.u8TempImage[BACKGROUND][r+c] < 255)
-								data.u8TempImage[BACKGROUND][r+c] += 1;
-						else if(Diff < 0 && data.u8TempImage[BACKGROUND][r+c] > 1)
-								data.u8TempImage[BACKGROUND][r+c] -= 1;
-					}
+				for(r = 0; r < K; r++)
+				{
+					W0 += Hist[p[r]];
+					M0 += (Hist[p[r]]*r);
+				}
+
+				for(r = K + 1; r < 256; r++)
+				{
+					W1 += Hist[p[r]];
+					M1 += (Hist[p[r]]*r);
+				}
+				sigB[K] = W0 * W1 * (((M0 / W0) - (M1 / M0)) * ((M0 / W0) - (M1 / M0)));
+
+				if(sigB[K] > sigB[Kopt])
+				{
+					Kopt = K;
+				}
+			}
+			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
+			{
+				for(c = 0; c < nc; c++)
+				{
+					data.u8TempImage[THRESHOLD][r+c] = abs((short) data.u8TempImage[GRAYSCALE][r+c]) > Kopt ? 0 : 0xff;
+				}
+			}
+
+		}
+		else
+		{
+			for(r = 0; r < siz; r+= nc)/* we strongly rely on the fact that them images have the same size */
+			{
+				for(c = 0; c < nc; c++)
+				{
+					/* first determine the foreground estimate */
+					data.u8TempImage[THRESHOLD][r+c] = abs((short) data.u8TempImage[GRAYSCALE][r+c]) > data.ipc.state.nThreshold ? 0 : 0xff;
 				}
 			}
 		}
-
 		/*
 		{
 			//for debugging purposes we log the background values to console out
@@ -92,7 +118,7 @@ void ProcessFrame(uint8 *pInputImg)
 			for(c = 1; c < nc-1; c++)/* we skip the first and last column */
 			{
 				unsigned char* p = &data.u8TempImage[THRESHOLD][r+c];
-				data.u8TempImage[EROSION][r+c] = *(p-nc-1) & *(p-nc) & *(p-nc+1) &
+				data.u8TempImage[DILATION][r+c] = *(p-nc-1) & *(p-nc) & *(p-nc+1) &
 												 *(p-1)    & *p      & *(p+1)    &
 												 *(p+nc-1) & *(p+nc) & *(p+nc+1);
 			}
@@ -102,8 +128,8 @@ void ProcessFrame(uint8 *pInputImg)
 		{
 			for(c = 1; c < nc-1; c++)/* we skip the first and last column */
 			{
-				unsigned char* p = &data.u8TempImage[EROSION][r+c];
-				data.u8TempImage[DILATION][r+c] = *(p-nc-1) | *(p-nc) | *(p-nc+1) |
+				unsigned char* p = &data.u8TempImage[DILATION][r+c];
+				data.u8TempImage[EROSION][r+c] = *(p-nc-1) | *(p-nc) | *(p-nc+1) |
 												  *(p-1)    | *p      | *(p+1)    |
 												  *(p+nc-1) | *(p+nc) | *(p+nc+1);
 			}
