@@ -11,6 +11,7 @@
 #include "template.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 OSC_ERR OscVisDrawBoundingBoxBW(struct OSC_PICTURE *picIn, struct OSC_VIS_REGIONS *regions, uint8 Color);
 
@@ -121,9 +122,9 @@ void ProcessFrame(uint8 *pInputImg)
 			for(c = 1; c < nc-1; c++)/* we skip the first and last column */
 			{
 				unsigned char* p = &data.u8TempImage[THRESHOLD][r+c];
-				data.u8TempImage[DILATION][r+c] = *(p-nc-1) & *(p-nc) & *(p-nc+1) &
-												 *(p-1)    & *p      & *(p+1)    &
-												 *(p+nc-1) & *(p+nc) & *(p+nc+1);
+				data.u8TempImage[DILATION][r+c] = *(p-nc-1) | *(p-nc) | *(p-nc+1) |
+												  *(p-1)    | *p      | *(p+1)    |
+												  *(p+nc-1) | *(p+nc) | *(p+nc+1);
 			}
 		}
 
@@ -132,9 +133,9 @@ void ProcessFrame(uint8 *pInputImg)
 			for(c = 1; c < nc-1; c++)/* we skip the first and last column */
 			{
 				unsigned char* p = &data.u8TempImage[DILATION][r+c];
-				data.u8TempImage[EROSION][r+c] = *(p-nc-1) | *(p-nc) | *(p-nc+1) |
-												  *(p-1)    | *p      | *(p+1)    |
-												  *(p+nc-1) | *(p+nc) | *(p+nc+1);
+				data.u8TempImage[EROSION][r+c] = *(p-nc-1) & *(p-nc) & *(p-nc+1) &
+												 *(p-1)    & *p      & *(p+1)    &
+												 *(p+nc-1) & *(p+nc) & *(p+nc+1);
 			}
 		}
 
